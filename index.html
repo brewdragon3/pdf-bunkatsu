@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF分割ツール</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <style>
+    .drop-active { @apply border-blue-500 bg-blue-50; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-lg w-full max-w-lg p-8 space-y-6">
+
+    <h1 class="text-2xl font-bold text-gray-800 text-center">PDF 分割ツール</h1>
+
+    <!-- アップロードエリア -->
+    <div
+      id="drop-zone"
+      class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer transition-colors hover:border-blue-400 hover:bg-blue-50"
+    >
+      <input id="file-input" type="file" accept=".pdf" class="hidden">
+      <svg class="mx-auto mb-3 w-10 h-10 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>
+      </svg>
+      <p class="text-gray-500 text-sm">PDFをここにドラッグ＆ドロップ</p>
+      <p class="text-gray-400 text-xs mt-1">またはクリックして選択</p>
+      <p id="file-name" class="mt-3 text-sm font-medium text-blue-600 hidden"></p>
+    </div>
+
+    <!-- 設定パネル -->
+    <div class="space-y-4">
+
+      <!-- 分割方向 -->
+      <div>
+        <label class="block text-sm font-semibold text-gray-700 mb-2">分割方向</label>
+        <div class="flex gap-4 flex-wrap">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="direction" value="auto" checked class="accent-blue-600">
+            <span class="text-sm text-gray-700">自動</span>
+            <span class="text-xs text-gray-400">（横長→左右 / 縦長→上下）</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="direction" value="horizontal" class="accent-blue-600">
+            <span class="text-sm text-gray-700">左右に分割</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="radio" name="direction" value="vertical" class="accent-blue-600">
+            <span class="text-sm text-gray-700">上下に分割</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 分割位置 -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <label for="ratio-slider" class="text-sm font-semibold text-gray-700">分割位置</label>
+          <div class="flex items-center gap-2">
+            <span id="ratio-label" class="text-sm font-mono font-bold text-blue-600">50%</span>
+            <button id="ratio-reset" class="text-xs text-gray-500 hover:text-gray-700 border border-gray-300 hover:border-gray-400 rounded px-2 py-0.5 transition-colors" title="50%にリセット">リセット</button>
+          </div>
+        </div>
+        <div class="flex justify-between text-xs text-gray-500 mb-1">
+          <span>左｜上</span>
+          <span>右｜下</span>
+        </div>
+        <input
+          id="ratio-slider"
+          type="range" min="1" max="99" value="50"
+          class="w-full h-2 rounded-lg appearance-none cursor-pointer accent-blue-600 bg-gray-200"
+        >
+        <div class="flex justify-between text-xs text-gray-400 mt-1">
+          <span>1%</span>
+          <span>50%</span>
+          <span>99%</span>
+        </div>
+      </div>
+
+      <!-- ページ範囲 -->
+      <div>
+        <label for="page-range" class="block text-sm font-semibold text-gray-700 mb-2">ページ範囲</label>
+        <input
+          id="page-range"
+          type="text"
+          placeholder="例: 1-3,5,7-9（空欄=全ページ）"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+        >
+      </div>
+
+    </div>
+
+    <!-- アクションエリア -->
+    <div class="space-y-3">
+      <button
+        id="submit-btn"
+        disabled
+        class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+      >
+        <span id="btn-text">分割する</span>
+        <svg id="spinner" class="hidden w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+      </button>
+
+      <p id="error-msg" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></p>
+
+      <a
+        id="download-btn"
+        href="#"
+        class="hidden w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4-4 4m0 0-4-4m4 4V4"/>
+        </svg>
+        ダウンロード
+      </a>
+    </div>
+
+  </div>
+
+  <script>
+    // ---- DOM refs ----
+    const dropZone    = document.getElementById('drop-zone');
+    const fileInput   = document.getElementById('file-input');
+    const fileNameEl  = document.getElementById('file-name');
+    const ratioSlider = document.getElementById('ratio-slider');
+    const ratioLabel  = document.getElementById('ratio-label');
+    const pageRange   = document.getElementById('page-range');
+    const submitBtn   = document.getElementById('submit-btn');
+    const btnText     = document.getElementById('btn-text');
+    const spinner     = document.getElementById('spinner');
+    const errorMsg    = document.getElementById('error-msg');
+    const downloadBtn = document.getElementById('download-btn');
+
+    let selectedFile = null;
+
+    // ---- ファイル選択 ----
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('border-blue-500', 'bg-blue-50');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+    });
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+      const f = e.dataTransfer.files[0];
+      if (f && f.type === 'application/pdf') {
+        setFile(f);
+      } else {
+        showError('PDFファイルをドロップしてください。');
+      }
+    });
+
+    function setFile(f) {
+      selectedFile = f;
+      fileNameEl.textContent = f.name;
+      fileNameEl.classList.remove('hidden');
+      submitBtn.disabled = false;
+      clearError();
+      downloadBtn.classList.add('hidden');
+    }
+
+    // ---- スライダー ----
+    ratioSlider.addEventListener('input', () => {
+      ratioLabel.textContent = ratioSlider.value + '%';
+    });
+    document.getElementById('ratio-reset').addEventListener('click', () => {
+      ratioSlider.value = 50;
+      ratioLabel.textContent = '50%';
+    });
+
+    // ---- エラー表示 ----
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.classList.remove('hidden');
+    }
+    function clearError() {
+      errorMsg.classList.add('hidden');
+      errorMsg.textContent = '';
+    }
+
+    // ---- ローディング ----
+    function setLoading(on) {
+      submitBtn.disabled = on;
+      spinner.classList.toggle('hidden', !on);
+      btnText.textContent = on ? '処理中...' : '分割する';
+    }
+
+    // ---- PDF処理ロジック ----
+
+    function parsePageRange(rangeStr, maxPages) {
+      if (!rangeStr.trim()) return null; // null = 全ページ
+      const pages = new Set();
+      for (const part of rangeStr.split(',')) {
+        const p = part.trim();
+        if (!p) continue;
+        if (p.includes('-')) {
+          const segments = p.split('-');
+          if (segments.length !== 2) throw new Error(`無効な範囲: "${p}"`);
+          const s = Number(segments[0]);
+          const e = Number(segments[1]);
+          if (!Number.isInteger(s) || !Number.isInteger(e) || s < 1 || e < s) {
+            throw new Error(`無効な範囲: "${p}"`);
+          }
+          for (let i = s; i <= Math.min(e, maxPages); i++) pages.add(i - 1);
+        } else {
+          const n = Number(p);
+          if (!Number.isInteger(n) || n < 1 || n > maxPages) {
+            throw new Error(`無効なページ番号: "${p}"`);
+          }
+          pages.add(n - 1);
+        }
+      }
+      return pages;
+    }
+
+    function cropPage(page, lx, ly, ux, uy) {
+      page.setCropBox(lx, ly, ux - lx, uy - ly);
+    }
+
+    async function splitPdf(arrayBuffer, ratio, pageRangeStr, direction) {
+      const { PDFDocument } = PDFLib;
+      const srcDoc = await PDFDocument.load(arrayBuffer);
+      const outDoc = await PDFDocument.create();
+      const total = srcDoc.getPageCount();
+
+      const targetSet = parsePageRange(pageRangeStr, total);
+
+      for (let idx = 0; idx < total; idx++) {
+        const shouldSplit = (targetSet === null || targetSet.has(idx));
+
+        if (!shouldSplit) {
+          const [copied] = await outDoc.copyPages(srcDoc, [idx]);
+          outDoc.addPage(copied);
+          continue;
+        }
+
+        const srcPage = srcDoc.getPage(idx);
+        const width   = srcPage.getWidth();
+        const height  = srcPage.getHeight();
+        const delta   = Math.abs(ratio - 0.5);
+
+        const doHorizontal =
+          direction === 'horizontal' ? true  :
+          direction === 'vertical'   ? false :
+          (width >= height); // auto
+
+        if (doHorizontal) {
+          const splitX = width * ratio;
+          const adjust = width * delta;
+          const [left, right] = await outDoc.copyPages(srcDoc, [idx, idx]);
+          if (ratio >= 0.5) {
+            cropPage(left,   adjust,  0, splitX,        height);
+            cropPage(right,  splitX,  0, width + adjust, height);
+          } else {
+            cropPage(left,  -adjust,  0, splitX,        height);
+            cropPage(right,  splitX,  0, width - adjust, height);
+          }
+          outDoc.addPage(left);
+          outDoc.addPage(right);
+        } else {
+          const splitY = height * ratio;
+          const adjust = height * delta;
+          const [top, bottom] = await outDoc.copyPages(srcDoc, [idx, idx]);
+          if (ratio >= 0.5) {
+            cropPage(top,    0, splitY, width, height + adjust);
+            cropPage(bottom, 0, adjust, width, splitY);
+          } else {
+            cropPage(top,    0, splitY,  width, height - adjust);
+            cropPage(bottom, 0, -adjust, width, splitY);
+          }
+          outDoc.addPage(top);
+          outDoc.addPage(bottom);
+        }
+      }
+
+      return await outDoc.save();
+    }
+
+    // ---- 送信 ----
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      clearError();
+      setLoading(true);
+      downloadBtn.classList.add('hidden');
+
+      try {
+        const ratio     = parseInt(ratioSlider.value) / 100;
+        const direction = document.querySelector('input[name="direction"]:checked').value;
+        const range     = pageRange.value.trim();
+        const buf       = await selectedFile.arrayBuffer();
+        const pdfBytes  = await splitPdf(buf, ratio, range, direction);
+
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const url  = URL.createObjectURL(blob);
+        downloadBtn.href     = url;
+        downloadBtn.download = selectedFile.name.replace(/\.pdf$/i, '_split.pdf');
+        downloadBtn.classList.remove('hidden');
+      } catch (e) {
+        showError(e.message || '処理中にエラーが発生しました。');
+      } finally {
+        setLoading(false);
+      }
+    });
+  </script>
+</body>
+</html>
